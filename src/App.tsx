@@ -1,0 +1,527 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Send, 
+  Linkedin, 
+  Mail, 
+  Instagram, 
+  Twitter, 
+  Moon, 
+  Sun, 
+  Search,
+  Users,
+  CheckCircle2,
+  MoreVertical,
+  Settings,
+  Zap,
+  History,
+  Lock,
+  Plus,
+  LogOut,
+  User,
+  Shield,
+  ExternalLink,
+  X
+} from 'lucide-react';
+import { Contact, Message, DataSource } from './types';
+import { searchContacts, generateDraft } from './services/geminiService';
+
+const MOCK_CONTACTS: Contact[] = [
+  { id: '1', name: 'Julia Stiles', role: 'Head of Design', company: 'Stripe', avatar: 'JS', source: 'LinkedIn' },
+  { id: '2', name: 'Marcus Reed', role: 'Product Design Lead', company: 'Linear', avatar: 'MR', source: 'LinkedIn' },
+  { id: '3', name: 'Anna Lee', role: 'Design Systems', company: 'Airbnb', avatar: 'AL', source: 'LinkedIn' },
+  { id: '4', name: 'Chris Kim', role: 'Creative Director', company: 'Apple', avatar: 'CK', source: 'LinkedIn' },
+  { id: '5', name: 'Sarah Chen', role: 'UX Engineer', company: 'Google', avatar: 'SC', source: 'Gmail' },
+  { id: '6', name: 'David Miller', role: 'Design Manager', company: 'Meta', avatar: 'DM', source: 'Gmail' },
+  { id: '7', name: 'Elena Rodriguez', role: 'Senior Designer', company: 'Vercel', avatar: 'ER', source: 'LinkedIn' },
+  { id: '8', name: 'Tom Wilson', role: 'Founding Designer', company: 'Ramp', avatar: 'TW', source: 'LinkedIn' },
+];
+
+const INITIAL_SOURCES: DataSource[] = [
+  { id: 'linkedin', name: 'LinkedIn', meta: '12.4k connections', active: true, configured: true, icon: 'linkedin' },
+  { id: 'gmail', name: 'Gmail', meta: 'primary@studio.design', active: true, configured: true, icon: 'mail' },
+  { id: 'instagram', name: 'Instagram', meta: '8.2k followers', active: false, configured: false, icon: 'instagram' },
+  { id: 'twitter', name: 'Twitter', meta: 'Connect account', active: false, configured: false, icon: 'twitter' },
+];
+
+export default function App() {
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [messages, setMessages] = useState<Message[]>([
+    { id: '1', role: 'ai', content: "Good afternoon. I'm connected to your LinkedIn and Gmail.\nWho are we targeting today?", timestamp: Date.now() }
+  ]);
+  const [input, setInput] = useState('');
+  const [sources, setSources] = useState<DataSource[]>(INITIAL_SOURCES);
+  const [identifiedContacts, setIdentifiedContacts] = useState<Contact[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [activeDraft, setActiveDraft] = useState<string | null>(null);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAddSourceModalOpen, setIsAddSourceModalOpen] = useState(false);
+  const [isConfiguringSource, setIsConfiguringSource] = useState<DataSource | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    document.body.dataset.theme = theme;
+  }, [theme]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleSendMessage = async () => {
+    if (!input.trim() || isSearching) return;
+
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: input, timestamp: Date.now() };
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
+    setIsSearching(true);
+
+    try {
+      const results = await searchContacts(input, MOCK_CONTACTS);
+      setIdentifiedContacts(results);
+
+      const aiMsg: Message = { 
+        id: (Date.now() + 1).toString(), 
+        role: 'ai', 
+        content: `Scanning ${sources.filter(s => s.active).map(s => s.name).join(' & ')}...\n\nI found **${results.length} potential candidates** matching your request.\nDrafting outreach now.`, 
+        timestamp: Date.now() 
+      };
+      setMessages(prev => [...prev, aiMsg]);
+
+      if (results.length > 0) {
+        setSelectedContact(results[0]);
+        const draft = await generateDraft(input, results[0]);
+        setActiveDraft(draft);
+      }
+    } catch (error) {
+      console.error(error);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', content: "Sorry, I encountered an error while searching.", timestamp: Date.now() }]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const toggleSource = (id: string) => {
+    setSources(prev => prev.map(s => {
+      if (s.id === id) {
+        if (!s.configured) return s;
+        return { ...s, active: !s.active };
+      }
+      return s;
+    }));
+  };
+
+  const handleContactClick = async (contact: Contact) => {
+    setSelectedContact(contact);
+    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+    const draft = await generateDraft(lastUserMsg?.content || "General outreach", contact);
+    setActiveDraft(draft);
+  };
+
+  const handleAddSource = (sourceName: string) => {
+    setIsConnecting(true);
+    // Simulate authentication delay
+    setTimeout(() => {
+      const newSource: DataSource = {
+        id: sourceName.toLowerCase(),
+        name: sourceName,
+        meta: 'Connected successfully',
+        active: true,
+        configured: true,
+        icon: sourceName.toLowerCase()
+      };
+      setSources(prev => [...prev, newSource]);
+      setIsConnecting(false);
+      setIsAddSourceModalOpen(false);
+      
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'ai',
+        content: `Successfully connected to **${sourceName}**. I can now index your contacts from this platform.`,
+        timestamp: Date.now()
+      }]);
+    }, 2000);
+  };
+
+  const handleConfigureSource = (source: DataSource) => {
+    setIsConnecting(true);
+    setTimeout(() => {
+      setSources(prev => prev.map(s => 
+        s.id === source.id ? { ...s, configured: true, active: true, meta: 'Account verified' } : s
+      ));
+      setIsConnecting(false);
+      setIsConfiguringSource(null);
+      
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'ai',
+        content: `**${source.name}** has been successfully configured and activated.`,
+        timestamp: Date.now()
+      }]);
+    }, 1500);
+  };
+
+  return (
+    <div className="app-layout grid grid-cols-[260px_1fr_340px] h-screen w-full overflow-hidden font-sans relative">
+      {/* Settings Backdrop Blur */}
+      <AnimatePresence>
+        {(isSettingsOpen || isAddSourceModalOpen) && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => { setIsSettingsOpen(false); setIsAddSourceModalOpen(false); }}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm z-[100]"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Sidebar - Data Sources */}
+      <aside className="panel bg-bg-panel border-r border-border flex flex-col h-full overflow-hidden">
+        <div className="p-6 pb-0 shrink-0">
+          <div className="panel-header flex justify-between items-center mb-8 min-h-[40px] shrink-0 relative">
+            <div className="logo font-pixel font-bold text-lg tracking-tighter flex items-center gap-2">
+              <div className="logo-icon w-4 h-4 bg-text-primary [clip-path:polygon(0%_0%,100%_0%,100%_100%,0%_100%,0%_60%,40%_60%,40%_40%,0%_40%)]"></div>
+              MailRite
+            </div>
+            
+            <div className="relative">
+              <button 
+                onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+                className={`p-1.5 rounded-md hover:bg-bg-surface text-text-secondary transition-colors z-[110] relative ${isSettingsOpen ? 'bg-bg-surface text-text-primary' : ''}`}
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+
+              <AnimatePresence>
+                {isSettingsOpen && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 mt-2 w-56 bg-bg-surface border border-border rounded-xl shadow-2xl z-[110] overflow-hidden p-1"
+                  >
+                    <div className="px-3 py-2 text-[10px] font-bold text-text-tertiary uppercase tracking-widest">Account</div>
+                    <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-text-primary hover:bg-bg-panel rounded-lg transition-colors">
+                      <User className="w-4 h-4" /> Profile
+                    </button>
+                    <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-text-primary hover:bg-bg-panel rounded-lg transition-colors">
+                      <Shield className="w-4 h-4" /> Security
+                    </button>
+                    <div className="h-[1px] bg-border my-1" />
+                    <div className="px-3 py-2 text-[10px] font-bold text-text-tertiary uppercase tracking-widest">App</div>
+                    <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-text-primary hover:bg-bg-panel rounded-lg transition-colors">
+                      <ExternalLink className="w-4 h-4" /> API Keys
+                    </button>
+                    <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-red-500 hover:bg-red-500/10 rounded-lg transition-colors">
+                      <LogOut className="w-4 h-4" /> Sign Out
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+
+          <div className="panel-title text-[11px] uppercase tracking-[0.2em] text-text-secondary font-bold mb-6 flex justify-between items-center">
+            Data Sources
+            <button 
+              onClick={() => setIsAddSourceModalOpen(true)}
+              className="p-1 hover:text-accent transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-6 space-y-3 custom-scrollbar">
+          {sources.map(source => (
+            <div key={source.id} className="relative">
+              <label 
+                onClick={(e) => {
+                  if (!source.configured) {
+                    e.preventDefault();
+                    setIsConfiguringSource(source);
+                  }
+                }}
+                className={`source-card bg-bg-surface border border-border rounded-lg p-4 flex items-center justify-between transition-all cursor-pointer relative group z-20 ${source.active ? 'border-accent/40 bg-gradient-to-br from-bg-surface to-accent/5' : 'hover:border-text-secondary/40'}`}
+              >
+                <div className="source-info flex flex-col">
+                  <div className="source-name text-[14px] font-semibold mb-0.5 flex items-center gap-2">
+                    {source.name}
+                    {!source.configured && <Lock className="w-3 h-3 text-text-tertiary" />}
+                  </div>
+                  <div className="source-meta text-[10px] text-text-secondary tabular-nums tracking-wide">
+                    {source.configured ? source.meta : 'Configure in settings'}
+                  </div>
+                </div>
+                <input 
+                  type="checkbox" 
+                  className="hidden" 
+                  checked={source.active} 
+                  disabled={!source.configured}
+                  onChange={() => toggleSource(source.id)} 
+                />
+                <div className={`toggle w-11 h-6.5 rounded-full relative transition-all duration-300 ease-in-out p-1 ${!source.configured ? 'opacity-40 cursor-not-allowed' : ''} ${source.active ? 'bg-[#34C759]' : 'bg-[#E9E9EA] dark:bg-[#39393D]'}`}>
+                  <motion.div 
+                    animate={{ x: source.active ? 18 : 0 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                    className="w-4.5 h-4.5 bg-white rounded-full shadow-md"
+                  />
+                </div>
+              </label>
+              
+              {/* Animated Connection Line */}
+              <AnimatePresence>
+                {source.active && (
+                  <motion.div 
+                    initial={{ opacity: 0, scaleX: 0 }}
+                    animate={{ opacity: 1, scaleX: 1 }}
+                    exit={{ opacity: 0, scaleX: 0 }}
+                    style={{ originX: 0 }}
+                    className="absolute -right-[26px] top-1/2 -translate-y-1/2 w-[26px] h-[1px] z-10 overflow-hidden"
+                  >
+                    <div className="w-full h-full connection-flow" />
+                    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-accent rounded-full shadow-[0_0_8px_#FF9F1C]" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-auto p-6 pt-5 border-t border-border shrink-0">
+          <div 
+            className="theme-switch flex items-center justify-between text-[11px] text-text-secondary cursor-pointer group"
+            onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
+          >
+            <div className="flex items-center gap-3">
+              <div className="theme-toggle-ui w-10 h-5 border border-text-secondary/40 rounded-xl relative flex items-center p-[2px] group-hover:border-text-secondary transition-colors">
+                <motion.div 
+                  animate={{ x: theme === 'light' ? 20 : 0 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                  className={`w-3.5 h-3.5 rounded-full transition-colors ${theme === 'light' ? 'bg-bg-deep shadow-[inset_2px_2px_0_var(--color-text-primary)]' : 'bg-text-primary'}`}
+                />
+              </div>
+              <span className="font-medium">Appearance</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Panel - Chat */}
+      <main className="panel center-panel bg-bg-deep p-0 flex flex-col border-r border-border overflow-hidden relative">
+        {/* Add Source Modal */}
+        <AnimatePresence>
+          {isAddSourceModalOpen && (
+            <div className="absolute inset-0 flex items-center justify-center z-[120] p-6">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="bg-bg-surface border border-border rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+              >
+                <div className="p-6 border-b border-border flex justify-between items-center">
+                  <h3 className="text-lg font-bold">Connect New Source</h3>
+                  <button onClick={() => setIsAddSourceModalOpen(false)} className="text-text-secondary hover:text-text-primary">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="p-6 space-y-4">
+                  <p className="text-sm text-text-secondary">Authenticate with your social accounts to transform your connections into quality contact lists.</p>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    {['Facebook', 'Slack', 'Discord', 'HubSpot'].map(name => (
+                      <button 
+                        key={name}
+                        onClick={() => handleAddSource(name)}
+                        disabled={isConnecting}
+                        className="flex items-center gap-3 p-3 bg-bg-panel border border-border rounded-xl hover:border-accent/40 transition-all text-sm font-medium disabled:opacity-50"
+                      >
+                        <div className="w-8 h-8 bg-bg-surface rounded-lg flex items-center justify-center">
+                          <Plus className="w-4 h-4 text-text-tertiary" />
+                        </div>
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+
+                  {isConnecting && (
+                    <div className="flex items-center justify-center gap-3 py-4 text-accent animate-pulse">
+                      <Zap className="w-4 h-4 fill-accent" />
+                      <span className="text-sm font-bold uppercase tracking-widest">Authenticating...</span>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Configuration Modal */}
+        <AnimatePresence>
+          {isConfiguringSource && (
+            <div className="absolute inset-0 flex items-center justify-center z-[120] p-6">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="bg-bg-surface border border-border rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+              >
+                <div className="p-6 border-b border-border flex justify-between items-center">
+                  <h3 className="text-lg font-bold">Configure {isConfiguringSource.name}</h3>
+                  <button onClick={() => setIsConfiguringSource(null)} className="text-text-secondary hover:text-text-primary">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="p-6 space-y-6">
+                  <div className="flex items-center gap-4 p-4 bg-bg-panel border border-border rounded-xl">
+                    <div className="w-12 h-12 bg-bg-surface rounded-full flex items-center justify-center border border-border">
+                      <Lock className="w-6 h-6 text-accent" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold">Authorization Required</div>
+                      <div className="text-xs text-text-secondary">Grant MailRite access to your {isConfiguringSource.name} data.</div>
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={() => handleConfigureSource(isConfiguringSource)}
+                    disabled={isConnecting}
+                    className="w-full py-4 bg-accent text-bg-deep font-bold rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isConnecting ? (
+                      <>
+                        <motion.div 
+                          animate={{ rotate: 360 }}
+                          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                        >
+                          <Zap className="w-4 h-4 fill-bg-deep" />
+                        </motion.div>
+                        Verifying...
+                      </>
+                    ) : (
+                      <>Connect {isConfiguringSource.name} Account</>
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        <div className="chat-area flex-1 px-8 md:px-12 lg:px-20 py-12 overflow-y-auto flex flex-col gap-10">
+          <AnimatePresence>
+            {messages.map((msg) => (
+              <motion.div 
+                key={msg.id}
+                initial={{ opacity: 0, y: 12, filter: 'blur(10px)' }}
+                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                className={`message w-full flex ${msg.role === 'user' ? 'justify-end' : 'justify-end'}`}
+              >
+                <div className={`msg-bubble inline-block px-8 py-6 rounded-3xl text-[16px] leading-relaxed relative max-w-[540px] ${msg.role === 'user' ? 'bg-bg-surface border border-border text-text-primary rounded-tr-[4px]' : 'bg-bg-surface/30 border border-border/50 text-text-primary rounded-tr-[4px] shadow-sm'}`}>
+                  {msg.role === 'ai' && (
+                    <div className="text-[10px] text-accent mb-3 tracking-[0.2em] font-black uppercase flex items-center gap-2">
+                      <Zap className="w-3 h-3 fill-accent" />
+                      MailRite AI
+                    </div>
+                  )}
+                  <div className="whitespace-pre-wrap font-medium tracking-tight leading-relaxed text-[16px]">{msg.content}</div>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+          <div ref={chatEndRef} />
+        </div>
+
+        <div className="input-area px-8 md:px-12 lg:px-20 pb-10 pt-4 bg-gradient-to-t from-bg-deep via-bg-deep/95 to-transparent relative shrink-0">
+          <div className="mb-3.5 flex opacity-90 gap-2">
+            {sources.filter(s => s.active).map(s => (
+              <span key={s.id} className="tag-pill inline-flex items-center gap-1.5 px-2.5 py-1 bg-accent/10 border border-accent/20 rounded-full text-[10px] text-accent font-bold uppercase tracking-wider">
+                <span className="status-dot w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_8px_#FF9F1C]"></span>
+                {s.name}
+              </span>
+            ))}
+          </div>
+
+          <div className="input-container chat-shadow relative bg-bg-surface border border-border rounded-2xl p-4 flex gap-4 items-end focus-within:border-text-secondary/40 transition-all">
+            <textarea 
+              placeholder="Ask MailRite..." 
+              className="flex-1 bg-transparent border-none text-text-primary font-sans text-[15px] resize-none h-7 p-1 outline-none placeholder:text-text-tertiary font-medium"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
+            />
+            <button 
+              className={`send-btn w-9 h-9 bg-accent border-none rounded-lg cursor-pointer flex items-center justify-center relative -top-0.5 transition-all active:translate-y-[2px] active:shadow-none shadow-[0_4px_0_#c27800] ${isSearching ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110'}`}
+              onClick={handleSendMessage}
+              disabled={isSearching}
+            >
+              <Send className="w-4.5 h-4.5 text-black" />
+            </button>
+          </div>
+        </div>
+      </main>
+
+      {/* Right Panel - Identified Contacts */}
+      <aside className="panel bg-bg-panel flex flex-col p-6">
+        <div className="panel-header flex justify-between items-center mb-8 min-h-[40px]">
+          <div className="panel-title text-[11px] uppercase tracking-[0.2em] text-text-secondary font-bold">Identified Contacts</div>
+          <div className="text-[10px] text-accent font-black bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">{identifiedContacts.length || 0} Matches</div>
+        </div>
+
+        <div className="preview-list flex flex-col gap-[1px] bg-border border border-border rounded-lg overflow-hidden">
+          {identifiedContacts.length > 0 ? (
+            identifiedContacts.map(contact => (
+              <div 
+                key={contact.id} 
+                className={`preview-item bg-bg-surface p-4 flex gap-3.5 items-center cursor-pointer hover:bg-bg-surface/80 transition-colors ${selectedContact?.id === contact.id ? 'bg-accent/5' : ''}`}
+                onClick={() => handleContactClick(contact)}
+              >
+                <div className="avatar w-9 h-9 bg-border rounded-full flex items-center justify-center text-[10px] text-text-secondary font-black uppercase tracking-tighter">
+                  {contact.avatar}
+                </div>
+                <div className="preview-details flex flex-col">
+                  <div className="preview-name text-[13px] font-bold tracking-tight">{contact.name}</div>
+                  <div className="preview-role text-[10px] text-text-secondary font-medium uppercase tracking-wide">{contact.role} @ {contact.company}</div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="bg-bg-surface p-10 text-center text-text-tertiary text-[11px] font-medium uppercase tracking-widest">
+              No contacts identified yet.
+            </div>
+          )}
+        </div>
+
+        {selectedContact && activeDraft && (
+          <motion.div 
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-8"
+          >
+            <div className="panel-title text-[11px] uppercase tracking-[0.2em] text-text-secondary font-bold mb-4">Draft Preview</div>
+            <div className="text-[12px] text-text-secondary leading-relaxed border-l-2 border-accent/30 pl-4 italic whitespace-pre-wrap font-medium">
+              {activeDraft}
+            </div>
+            <button className="mt-6 w-full py-3 bg-bg-surface border border-border rounded-xl text-[11px] font-bold uppercase tracking-widest hover:border-accent/40 hover:bg-accent/5 transition-all text-text-primary">
+              Send via {selectedContact.source}
+            </button>
+          </motion.div>
+        )}
+
+        <div className="mt-auto pt-6 flex justify-end">
+          <button className="p-3 bg-bg-surface border border-border rounded-full text-text-secondary hover:text-accent hover:border-accent/40 transition-all shadow-sm">
+            <History className="w-5 h-5" />
+          </button>
+        </div>
+      </aside>
+    </div>
+  );
+}
