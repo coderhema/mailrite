@@ -60,6 +60,9 @@ export default function App() {
   const [isConfiguringSource, setIsConfiguringSource] = useState<DataSource | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
 
+  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false);
+  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -164,22 +167,27 @@ export default function App() {
   };
 
   return (
-    <div className="app-layout grid grid-cols-[260px_1fr_340px] h-screen w-full overflow-hidden font-sans relative">
-      {/* Settings Backdrop Blur */}
+    <div className="app-layout flex flex-col md:grid md:grid-cols-[260px_1fr_340px] h-screen w-full overflow-hidden font-sans relative">
+      {/* Settings Backdrop Blur & Mobile Sidebar Backdrop */}
       <AnimatePresence>
-        {(isSettingsOpen || isAddSourceModalOpen) && (
+        {(isSettingsOpen || isAddSourceModalOpen || isLeftSidebarOpen || isRightSidebarOpen) && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => { setIsSettingsOpen(false); setIsAddSourceModalOpen(false); }}
+            onClick={() => { 
+              setIsSettingsOpen(false); 
+              setIsAddSourceModalOpen(false); 
+              setIsLeftSidebarOpen(false);
+              setIsRightSidebarOpen(false);
+            }}
             className="absolute inset-0 bg-black/40 backdrop-blur-sm z-[100]"
           />
         )}
       </AnimatePresence>
 
       {/* Sidebar - Data Sources */}
-      <aside className="panel bg-bg-panel border-r border-border flex flex-col h-full overflow-hidden">
+      <aside className={`panel bg-bg-panel border-r border-border flex flex-col h-full overflow-hidden fixed md:relative z-[110] md:z-auto transition-transform duration-300 w-[280px] md:w-auto ${isLeftSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
         <div className="p-6 pb-0 shrink-0">
           <div className="panel-header flex justify-between items-center mb-8 min-h-[40px] shrink-0 relative">
             <div className="logo font-pixel font-bold text-lg tracking-tighter flex items-center gap-2">
@@ -311,7 +319,20 @@ export default function App() {
       </aside>
 
       {/* Main Panel - Chat */}
-      <main className="panel center-panel bg-bg-deep p-0 flex flex-col border-r border-border overflow-hidden relative">
+      <main className="panel center-panel bg-bg-deep p-0 flex flex-col border-r border-border overflow-hidden relative flex-1">
+        {/* Mobile Header */}
+        <div className="md:hidden flex items-center justify-between p-4 border-b border-border bg-bg-panel shrink-0">
+          <button onClick={() => setIsLeftSidebarOpen(true)} className="p-2 text-text-secondary hover:text-text-primary">
+            <Settings className="w-5 h-5" />
+          </button>
+          <div className="logo font-pixel font-bold text-sm tracking-tighter flex items-center gap-2">
+            <div className="logo-icon w-3 h-3 bg-text-primary [clip-path:polygon(0%_0%,100%_0%,100%_100%,0%_100%,0%_60%,40%_60%,40%_40%,0%_40%)]"></div>
+            MailRite
+          </div>
+          <button onClick={() => setIsRightSidebarOpen(true)} className="p-2 text-text-secondary hover:text-text-primary">
+            <Users className="w-5 h-5" />
+          </button>
+        </div>
         {/* Add Source Modal */}
         <AnimatePresence>
           {isAddSourceModalOpen && (
@@ -411,7 +432,7 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        <div className="chat-area flex-1 px-8 md:px-12 lg:px-20 py-12 overflow-y-auto flex flex-col gap-10">
+        <div className="chat-area flex-1 px-4 md:px-12 lg:px-20 py-8 md:py-12 overflow-y-auto flex flex-col gap-6 md:gap-10">
           <AnimatePresence>
             {messages.map((msg) => (
               <motion.div 
@@ -420,7 +441,7 @@ export default function App() {
                 animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
                 className={`message w-full flex ${msg.role === 'user' ? 'justify-end' : 'justify-end'}`}
               >
-                <div className={`msg-bubble inline-block px-8 py-6 rounded-3xl text-[16px] leading-relaxed relative max-w-[540px] ${msg.role === 'user' ? 'bg-bg-surface border border-border text-text-primary rounded-tr-[4px]' : 'bg-bg-surface/30 border border-border/50 text-text-primary rounded-tr-[4px] shadow-sm'}`}>
+                <div className={`msg-bubble inline-block px-5 py-4 md:px-8 md:py-6 rounded-3xl text-[15px] md:text-[16px] leading-relaxed relative max-w-[90%] md:max-w-[540px] ${msg.role === 'user' ? 'bg-bg-surface border border-border text-text-primary rounded-tr-[4px]' : 'bg-bg-surface/30 border border-border/50 text-text-primary rounded-tr-[4px] shadow-sm'}`}>
                   {msg.role === 'ai' && (
                     <div className="text-[10px] text-accent mb-3 tracking-[0.2em] font-black uppercase flex items-center gap-2">
                       <Zap className="w-3 h-3 fill-accent" />
@@ -435,7 +456,7 @@ export default function App() {
           <div ref={chatEndRef} />
         </div>
 
-        <div className="input-area px-8 md:px-12 lg:px-20 pb-10 pt-4 bg-gradient-to-t from-bg-deep via-bg-deep/95 to-transparent relative shrink-0">
+        <div className="input-area px-4 md:px-12 lg:px-20 pb-6 md:pb-10 pt-4 bg-gradient-to-t from-bg-deep via-bg-deep/95 to-transparent relative shrink-0">
           <div className="mb-3.5 flex opacity-90 gap-2">
             {sources.filter(s => s.active).map(s => (
               <span key={s.id} className="tag-pill inline-flex items-center gap-1.5 px-2.5 py-1 bg-accent/10 border border-accent/20 rounded-full text-[10px] text-accent font-bold uppercase tracking-wider">
@@ -470,7 +491,7 @@ export default function App() {
       </main>
 
       {/* Right Panel - Identified Contacts */}
-      <aside className="panel bg-bg-panel flex flex-col p-6">
+      <aside className={`panel bg-bg-panel flex flex-col h-full overflow-hidden fixed right-0 md:relative z-[110] md:z-auto transition-transform duration-300 w-[300px] md:w-auto ${isRightSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'} p-6`}>
         <div className="panel-header flex justify-between items-center mb-8 min-h-[40px]">
           <div className="panel-title text-[11px] uppercase tracking-[0.2em] text-text-secondary font-bold">Identified Contacts</div>
           <div className="text-[10px] text-accent font-black bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">{identifiedContacts.length || 0} Matches</div>
