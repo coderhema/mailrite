@@ -1,5 +1,5 @@
 {
   "name": "MailRite",
-  "description": "AI-powered mailing app that transforms social connections into targeted contact lists.",
+  "description": "AI-powered mailing app with real OAuth integration for social platforms and targeted contact list generation.",
   "requestFramePermissions": []
 }

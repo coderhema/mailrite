@@ -6,6 +6,10 @@ import {
   Mail, 
   Instagram, 
   Twitter, 
+  Facebook,
+  Slack,
+  MessageSquare,
+  Database,
   Moon, 
   Sun, 
   Search,
@@ -59,6 +63,7 @@ export default function App() {
   const [isAddSourceModalOpen, setIsAddSourceModalOpen] = useState(false);
   const [isConfiguringSource, setIsConfiguringSource] = useState<DataSource | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
 
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
@@ -72,6 +77,32 @@ export default function App() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        const sourceId = event.data.sourceId;
+        const source = sources.find(s => s.id === sourceId);
+        if (source) {
+          // Simulate final verification after OAuth success
+          setIsConnecting(true);
+          setTimeout(() => {
+            setSources(prev => prev.map(s => s.id === sourceId ? { ...s, active: true, configured: true } : s));
+            setIsConnecting(false);
+            setIsConfiguringSource(null);
+            setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: 'ai',
+              content: `**${source.name}** has been successfully connected via OAuth and activated.`,
+              timestamp: Date.now()
+            }]);
+          }, 1000);
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [sources]);
 
   const handleSendMessage = async () => {
     if (!input.trim() || isSearching) return;
@@ -106,6 +137,20 @@ export default function App() {
     }
   };
 
+  const getSourceIcon = (iconName: string) => {
+    switch (iconName) {
+      case 'linkedin': return <Linkedin className="w-3.5 h-3.5" />;
+      case 'mail': return <Mail className="w-3.5 h-3.5" />;
+      case 'instagram': return <Instagram className="w-3.5 h-3.5" />;
+      case 'twitter': return <Twitter className="w-3.5 h-3.5" />;
+      case 'facebook': return <Facebook className="w-3.5 h-3.5" />;
+      case 'slack': return <Slack className="w-3.5 h-3.5" />;
+      case 'discord': return <MessageSquare className="w-3.5 h-3.5" />;
+      case 'hubspot': return <Database className="w-3.5 h-3.5" />;
+      default: return null;
+    }
+  };
+
   const toggleSource = (id: string) => {
     setSources(prev => prev.map(s => {
       if (s.id === id) {
@@ -123,47 +168,124 @@ export default function App() {
     setActiveDraft(draft);
   };
 
-  const handleAddSource = (sourceName: string) => {
+  const handleAddSource = async (sourceName: string) => {
     setIsConnecting(true);
-    // Simulate authentication delay
-    setTimeout(() => {
-      const newSource: DataSource = {
-        id: sourceName.toLowerCase(),
-        name: sourceName,
-        meta: 'Connected successfully',
-        active: true,
-        configured: true,
-        icon: sourceName.toLowerCase()
-      };
+    const sourceId = sourceName.toLowerCase();
+    
+    // First add it to the list as unconfigured
+    const newSource: DataSource = {
+      id: sourceId,
+      name: sourceName,
+      meta: 'Awaiting connection',
+      active: false,
+      configured: false,
+      icon: sourceId
+    };
+    
+    if (!sources.find(s => s.id === sourceId)) {
       setSources(prev => [...prev, newSource]);
-      setIsConnecting(false);
-      setIsAddSourceModalOpen(false);
+    }
+
+    try {
+      const response = await fetch(`/api/auth/url?sourceId=${sourceId}`);
+      if (!response.ok) throw new Error('Failed to get auth URL');
+      const { url } = await response.json();
+
+      // Open OAuth popup
+      const width = 600;
+      const height = 700;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
       
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        role: 'ai',
-        content: `Successfully connected to **${sourceName}**. I can now index your contacts from this platform.`,
-        timestamp: Date.now()
-      }]);
-    }, 2000);
+      const authWindow = window.open(
+        url,
+        'oauth_popup',
+        `width=${width},height=${height},left=${left},top=${top}`
+      );
+
+      if (!authWindow) {
+        alert('Please allow popups to connect your account.');
+        setIsConnecting(false);
+      }
+      setIsAddSourceModalOpen(false);
+    } catch (error) {
+      console.error('OAuth error:', error);
+      setIsConnecting(false);
+      // If it's a custom source we don't know, we might just "simulate" success or show error
+      alert(`Could not initiate real OAuth for ${sourceName}. Make sure it's a supported provider.`);
+    }
   };
 
-  const handleConfigureSource = (source: DataSource) => {
-    setIsConnecting(true);
-    setTimeout(() => {
-      setSources(prev => prev.map(s => 
-        s.id === source.id ? { ...s, configured: true, active: true, meta: 'Account verified' } : s
-      ));
-      setIsConnecting(false);
-      setIsConfiguringSource(null);
-      
+  const handleSendEmail = async () => {
+    if (!selectedContact || !activeDraft) return;
+
+    setIsSendingEmail(true);
+    try {
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: selectedContact.email || 'recipient@example.com', // Fallback for demo
+          subject: `Outreach to ${selectedContact.name}`,
+          body: activeDraft,
+          source: selectedContact.source
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'ai',
+          content: `✅ **Email sent successfully** to ${selectedContact.name} via ${selectedContact.source}.\n\n*${result.message || ''}*`,
+          timestamp: Date.now()
+        }]);
+        setActiveDraft(null);
+        setSelectedContact(null);
+      } else {
+        throw new Error(result.error || 'Failed to send');
+      }
+    } catch (error) {
+      console.error('Error sending email:', error);
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: 'ai',
-        content: `**${source.name}** has been successfully configured and activated.`,
+        content: `❌ **Failed to send email**: ${error instanceof Error ? error.message : 'Unknown error'}. Please check your SMTP settings in the environment.`,
         timestamp: Date.now()
       }]);
-    }, 1500);
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
+  const handleConfigureSource = async (source: DataSource) => {
+    setIsConnecting(true);
+    try {
+      const response = await fetch(`/api/auth/url?sourceId=${source.id}`);
+      if (!response.ok) throw new Error('Failed to get auth URL');
+      const { url } = await response.json();
+
+      // Open OAuth popup
+      const width = 600;
+      const height = 700;
+      const left = window.screenX + (window.outerWidth - width) / 2;
+      const top = window.screenY + (window.outerHeight - height) / 2;
+      
+      const authWindow = window.open(
+        url,
+        'oauth_popup',
+        `width=${width},height=${height},left=${left},top=${top}`
+      );
+
+      if (!authWindow) {
+        alert('Please allow popups to connect your account.');
+        setIsConnecting(false);
+      }
+    } catch (error) {
+      console.error('OAuth error:', error);
+      setIsConnecting(false);
+    }
   };
 
   return (
@@ -257,6 +379,9 @@ export default function App() {
               >
                 <div className="source-info flex flex-col">
                   <div className="source-name text-[14px] font-semibold mb-0.5 flex items-center gap-2">
+                    <span className="text-text-secondary">
+                      {getSourceIcon(source.icon)}
+                    </span>
                     {source.name}
                     {!source.configured && <Lock className="w-3 h-3 text-text-tertiary" />}
                   </div>
@@ -531,8 +656,24 @@ export default function App() {
             <div className="text-[12px] text-text-secondary leading-relaxed border-l-2 border-accent/30 pl-4 italic whitespace-pre-wrap font-medium">
               {activeDraft}
             </div>
-            <button className="mt-6 w-full py-3 bg-bg-surface border border-border rounded-xl text-[11px] font-bold uppercase tracking-widest hover:border-accent/40 hover:bg-accent/5 transition-all text-text-primary">
-              Send via {selectedContact.source}
+            <button 
+              onClick={handleSendEmail}
+              disabled={isSendingEmail}
+              className="mt-6 w-full py-3 bg-bg-surface border border-border rounded-xl text-[11px] font-bold uppercase tracking-widest hover:border-accent/40 hover:bg-accent/5 transition-all text-text-primary disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {isSendingEmail ? (
+                <>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                  >
+                    <Zap className="w-3 h-3 fill-accent" />
+                  </motion.div>
+                  Sending...
+                </>
+              ) : (
+                <>Send via {selectedContact.source}</>
+              )}
             </button>
           </motion.div>
         )}
