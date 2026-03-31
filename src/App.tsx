@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import ReactMarkdown from 'react-markdown';
 import { 
   Send, 
   Linkedin, 
@@ -25,7 +26,8 @@ import {
   User,
   Shield,
   ExternalLink,
-  X
+  X,
+  ChevronLeft
 } from 'lucide-react';
 import { Contact, Message, DataSource } from './types';
 import { searchContacts, generateDraft } from './services/geminiService';
@@ -64,6 +66,7 @@ export default function App() {
   const [isConfiguringSource, setIsConfiguringSource] = useState<DataSource | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [thinkingStage, setThinkingStage] = useState<string | null>(null);
 
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
@@ -112,14 +115,26 @@ export default function App() {
     setInput('');
     setIsSearching(true);
 
+    const activeSources = sources.filter(s => s.active).map(s => s.name);
+    const sourceNames = activeSources.length > 0 ? activeSources.join(' & ') : 'your sources';
+
     try {
+      setThinkingStage('Thinking...');
+      await new Promise(r => setTimeout(r, 800));
+      
+      setThinkingStage(`Searching your contacts on ${sourceNames}...`);
+      await new Promise(r => setTimeout(r, 1200));
+
+      setThinkingStage('Drafting outreach...');
+      await new Promise(r => setTimeout(r, 1000));
+
       const results = await searchContacts(input, MOCK_CONTACTS);
       setIdentifiedContacts(results);
 
       const aiMsg: Message = { 
         id: (Date.now() + 1).toString(), 
         role: 'ai', 
-        content: `Scanning ${sources.filter(s => s.active).map(s => s.name).join(' & ')}...\n\nI found **${results.length} potential candidates** matching your request.\nDrafting outreach now.`, 
+        content: `I found **${results.length} potential candidates** matching your request.\nDrafting outreach now.`, 
         timestamp: Date.now() 
       };
       setMessages(prev => [...prev, aiMsg]);
@@ -134,6 +149,7 @@ export default function App() {
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', content: "Sorry, I encountered an error while searching.", timestamp: Date.now() }]);
     } finally {
       setIsSearching(false);
+      setThinkingStage(null);
     }
   };
 
@@ -303,7 +319,7 @@ export default function App() {
               setIsLeftSidebarOpen(false);
               setIsRightSidebarOpen(false);
             }}
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm z-[100]"
+            className="absolute inset-0 z-[100]"
           />
         )}
       </AnimatePresence>
@@ -331,7 +347,7 @@ export default function App() {
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-2 w-56 bg-bg-surface border border-border rounded-xl shadow-2xl z-[110] overflow-hidden p-1"
+                    className="absolute left-0 md:left-auto md:right-0 mt-2 w-56 bg-bg-surface border border-border rounded-xl shadow-2xl z-[110] overflow-hidden p-1"
                   >
                     <div className="px-3 py-2 text-[10px] font-bold text-text-tertiary uppercase tracking-widest">Account</div>
                     <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-text-primary hover:bg-bg-panel rounded-lg transition-colors">
@@ -562,21 +578,45 @@ export default function App() {
             {messages.map((msg) => (
               <motion.div 
                 key={msg.id}
-                initial={{ opacity: 0, y: 12, filter: 'blur(10px)' }}
-                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                className={`message w-full flex ${msg.role === 'user' ? 'justify-end' : 'justify-end'}`}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`message w-full flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                <div className={`msg-bubble inline-block px-5 py-4 md:px-8 md:py-6 rounded-3xl text-[15px] md:text-[16px] leading-relaxed relative max-w-[90%] md:max-w-[540px] ${msg.role === 'user' ? 'bg-bg-surface border border-border text-text-primary rounded-tr-[4px]' : 'bg-bg-surface/30 border border-border/50 text-text-primary rounded-tr-[4px] shadow-sm'}`}>
+                <div className={`msg-bubble inline-block px-5 py-4 md:px-8 md:py-6 rounded-3xl text-[15px] md:text-[16px] leading-relaxed relative max-w-[90%] md:max-w-[540px] ${msg.role === 'user' ? 'bg-bg-surface border border-border text-text-primary rounded-tr-[4px]' : 'bg-bg-surface/30 border border-border/50 text-text-primary rounded-tl-[4px]'}`}>
                   {msg.role === 'ai' && (
                     <div className="text-[10px] text-accent mb-3 tracking-[0.2em] font-black uppercase flex items-center gap-2">
                       <Zap className="w-3 h-3 fill-accent" />
                       MailRite AI
                     </div>
                   )}
-                  <div className="whitespace-pre-wrap font-medium tracking-tight leading-relaxed text-[16px]">{msg.content}</div>
+                  <div className="markdown-body">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
                 </div>
               </motion.div>
             ))}
+            {thinkingStage && (
+              <motion.div 
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="message w-full flex justify-start"
+              >
+                <div className="msg-bubble inline-block px-5 py-4 md:px-8 md:py-6 rounded-3xl text-[15px] md:text-[16px] leading-relaxed relative max-w-[90%] md:max-w-[540px] bg-bg-surface/30 border border-border/50 text-text-primary rounded-tl-[4px]">
+                  <div className="text-[10px] text-accent mb-3 tracking-[0.2em] font-black uppercase flex items-center gap-2">
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                    >
+                      <Zap className="w-3 h-3 fill-accent" />
+                    </motion.div>
+                    Thinking...
+                  </div>
+                  <div className="shimmer-text font-medium italic">
+                    {thinkingStage}
+                  </div>
+                </div>
+              </motion.div>
+            )}
           </AnimatePresence>
           <div ref={chatEndRef} />
         </div>
@@ -591,7 +631,7 @@ export default function App() {
             ))}
           </div>
 
-          <div className="input-container chat-shadow relative bg-bg-surface border border-border rounded-2xl p-4 flex gap-4 items-end focus-within:border-text-secondary/40 transition-all">
+          <div className="input-container chat-shadow relative bg-bg-surface border border-border rounded-2xl p-4 flex gap-4 items-end transition-all">
             <textarea 
               placeholder="Ask MailRite..." 
               className="flex-1 bg-transparent border-none text-text-primary font-sans text-[15px] resize-none h-7 p-1 outline-none placeholder:text-text-tertiary font-medium"
@@ -615,70 +655,116 @@ export default function App() {
         </div>
       </main>
 
-      {/* Right Panel - Identified Contacts */}
-      <aside className={`panel bg-bg-panel flex flex-col h-full overflow-hidden fixed right-0 md:relative z-[110] md:z-auto transition-transform duration-300 w-[300px] md:w-auto ${isRightSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'} p-6`}>
-        <div className="panel-header flex justify-between items-center mb-8 min-h-[40px]">
-          <div className="panel-title text-[11px] uppercase tracking-[0.2em] text-text-secondary font-bold">Identified Contacts</div>
-          <div className="text-[10px] text-accent font-black bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">{identifiedContacts.length || 0} Matches</div>
-        </div>
-
-        <div className="preview-list flex flex-col gap-[1px] bg-border border border-border rounded-lg overflow-hidden">
-          {identifiedContacts.length > 0 ? (
-            identifiedContacts.map(contact => (
-              <div 
-                key={contact.id} 
-                className={`preview-item bg-bg-surface p-4 flex gap-3.5 items-center cursor-pointer hover:bg-bg-surface/80 transition-colors ${selectedContact?.id === contact.id ? 'bg-accent/5' : ''}`}
-                onClick={() => handleContactClick(contact)}
-              >
-                <div className="avatar w-9 h-9 bg-border rounded-full flex items-center justify-center text-[10px] text-text-secondary font-black uppercase tracking-tighter">
-                  {contact.avatar}
-                </div>
-                <div className="preview-details flex flex-col">
-                  <div className="preview-name text-[13px] font-bold tracking-tight">{contact.name}</div>
-                  <div className="preview-role text-[10px] text-text-secondary font-medium uppercase tracking-wide">{contact.role} @ {contact.company}</div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="bg-bg-surface p-10 text-center text-text-tertiary text-[11px] font-medium uppercase tracking-widest">
-              No contacts identified yet.
-            </div>
-          )}
-        </div>
-
-        {selectedContact && activeDraft && (
-          <motion.div 
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-8"
-          >
-            <div className="panel-title text-[11px] uppercase tracking-[0.2em] text-text-secondary font-bold mb-4">Draft Preview</div>
-            <div className="text-[12px] text-text-secondary leading-relaxed border-l-2 border-accent/30 pl-4 italic whitespace-pre-wrap font-medium">
-              {activeDraft}
-            </div>
-            <button 
-              onClick={handleSendEmail}
-              disabled={isSendingEmail}
-              className="mt-6 w-full py-3 bg-bg-surface border border-border rounded-xl text-[11px] font-bold uppercase tracking-widest hover:border-accent/40 hover:bg-accent/5 transition-all text-text-primary disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {isSendingEmail ? (
-                <>
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                  >
-                    <Zap className="w-3 h-3 fill-accent" />
-                  </motion.div>
-                  Sending...
-                </>
-              ) : (
-                <>Send via {selectedContact.source}</>
+      {/* Right Panel - Identified Contacts & Drafts */}
+      <aside className={`panel bg-bg-panel flex flex-col h-full overflow-hidden fixed right-0 md:relative z-[110] md:z-auto transition-transform duration-300 w-[300px] md:w-auto ${isRightSidebarOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
+        <div className="p-6 pb-4 shrink-0 border-b border-border">
+          <div className="panel-header flex justify-between items-center min-h-[40px]">
+            <div className="flex items-center gap-2">
+              {selectedContact && (
+                <button 
+                  onClick={() => {
+                    setSelectedContact(null);
+                    setActiveDraft(null);
+                  }}
+                  className="p-1 -ml-1 hover:bg-bg-surface rounded-md text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
               )}
-            </button>
-          </motion.div>
-        )}
+              <div className="panel-title text-[11px] uppercase tracking-[0.2em] text-text-secondary font-bold">
+                {selectedContact ? 'Draft Preview' : 'Identified Contacts'}
+              </div>
+            </div>
+            {!selectedContact && (
+              <div className="text-[10px] text-accent font-black bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">
+                {identifiedContacts.length || 0} Matches
+              </div>
+            )}
+          </div>
+        </div>
 
-        <div className="mt-auto pt-6 flex justify-end">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+          <AnimatePresence mode="wait">
+            {!selectedContact ? (
+              <motion.div 
+                key="list"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                className="preview-list flex flex-col gap-[1px] bg-border border border-border rounded-lg overflow-hidden"
+              >
+                {identifiedContacts.length > 0 ? (
+                  identifiedContacts.map(contact => (
+                    <div 
+                      key={contact.id} 
+                      className="preview-item bg-bg-surface p-4 flex gap-3.5 items-center cursor-pointer hover:bg-bg-surface/80 transition-colors"
+                      onClick={() => handleContactClick(contact)}
+                    >
+                      <div className="avatar w-9 h-9 bg-border rounded-full flex items-center justify-center text-[10px] text-text-secondary font-black uppercase tracking-tighter">
+                        {contact.avatar}
+                      </div>
+                      <div className="preview-details flex flex-col">
+                        <div className="preview-name text-[13px] font-bold tracking-tight">{contact.name}</div>
+                        <div className="preview-role text-[10px] text-text-secondary font-medium uppercase tracking-wide">{contact.role} @ {contact.company}</div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="bg-bg-surface p-10 text-center text-text-tertiary text-[11px] font-medium uppercase tracking-widest">
+                    No contacts identified yet.
+                  </div>
+                )}
+              </motion.div>
+            ) : (
+              <motion.div 
+                key="draft"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+                className="space-y-6"
+              >
+                <div className="flex items-center gap-4 p-4 bg-bg-surface border border-border rounded-xl">
+                  <div className="avatar w-12 h-12 bg-border rounded-full flex items-center justify-center text-[12px] text-text-secondary font-black uppercase tracking-tighter shrink-0">
+                    {selectedContact.avatar}
+                  </div>
+                  <div className="overflow-hidden">
+                    <div className="text-sm font-bold truncate">{selectedContact.name}</div>
+                    <div className="text-[10px] text-text-secondary font-medium uppercase truncate">{selectedContact.role} @ {selectedContact.company}</div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="panel-title text-[10px] uppercase tracking-[0.2em] text-text-tertiary font-bold">Email Draft</div>
+                  <div className="text-[14px] text-text-primary leading-relaxed border-l-2 border-accent/30 pl-4 italic whitespace-pre-wrap font-medium bg-bg-surface/50 p-4 rounded-r-xl">
+                    {activeDraft}
+                  </div>
+                </div>
+
+                <button 
+                  onClick={handleSendEmail}
+                  disabled={isSendingEmail}
+                  className="w-full py-4 bg-accent text-bg-deep font-bold rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-accent/20"
+                >
+                  {isSendingEmail ? (
+                    <>
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                      >
+                        <Zap className="w-4 h-4 fill-bg-deep" />
+                      </motion.div>
+                      Sending...
+                    </>
+                  ) : (
+                    <>Send via {selectedContact.source}</>
+                  )}
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <div className="p-6 pt-0 shrink-0 flex justify-end">
           <button className="p-3 bg-bg-surface border border-border rounded-full text-text-secondary hover:text-accent hover:border-accent/40 transition-all shadow-sm">
             <History className="w-5 h-5" />
           </button>
