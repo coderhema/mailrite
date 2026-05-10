@@ -1,7 +1,3 @@
-This contains everything you need to run your app locally.
-
-View your app in AI Studio: https://ai.studio/apps/f96da026-614d-48e4-bc40-17b40f4887a3
-
 ## Milestone status
 
 Milestone 1 is in progress, the Base payment routing contract draft has been added, and the Poke-backed outreach adapter plus x402 payment scaffolding are now wired into the server layer.
