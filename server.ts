@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import nodemailer from "nodemailer";
 import crypto from "crypto";
 import type { Contact } from "./src/types.ts";
+import { authRouter, requireAuth } from "./src/auth.ts";
 
 dotenv.config();
 
@@ -140,8 +141,12 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.get("/api/auth/url", (req, res) => {
-    const { sourceId } = req.query;
+  // ─── User Auth Routes (signup, login, logout, me) ──────────────────────
+  app.use("/api/auth", authRouter);
+
+  // ─── Social Source OAuth Routes (LinkedIn, Gmail, etc.) ────────────────
+  app.get("/api/social/auth/url", (req, res) => {
+    const sourceId = req.query.sourceId as string;
     const envVarName = `${String(sourceId).toUpperCase()}_CLIENT_ID`;
     const clientId = process.env[envVarName];
     const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
