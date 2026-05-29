@@ -1,0 +1,47 @@
+name: linkedin
+version: 1.0.0
+dsl_version: 3
+backend: http
+description: LinkedIn connections, profile data, and network activity
+base_url: https://api.linkedin.com
+
+inputs:
+  LINKEDIN_ACCESS_TOKEN:
+    kind: secret
+    hint: LinkedIn OAuth access token with r_liteprofile and r_emailaddress scopes
+
+auth:
+  type: HeaderAuth
+  headers:
+    - name: Authorization
+      from: template
+      template: Bearer {{input.LINKEDIN_ACCESS_TOKEN}}
+
+tables:
+  - name: connections
+    description: Your LinkedIn connections
+    request:
+      method: GET
+      path: /v2/connections
+    response:
+      rows_path:
+        - elements
+    pagination:
+      mode: offset
+      offset_param: start
+      offset_start: 0
+      page_size:
+        default: 50
+        max: 100
+        query_param: count
+    columns:
+      - name: id
+        type: Utf8
+      - name: name
+        type: Utf8
+      - name: email
+        type: Utf8
+      - name: role
+        type: Utf8
+      - name: company
+        type: Utf8

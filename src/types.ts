@@ -23,3 +23,16 @@ export interface DataSource {
   configured: boolean;
   icon: string;
 }
+
+export interface CoralQueryResult {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  rowCount: number;
+  executionTimeMs?: number;
+}
+
+export interface CoralPresetQuery {
+  label: string;
+  sql: string;
+  description: string;
+}

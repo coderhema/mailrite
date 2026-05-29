@@ -1,0 +1,50 @@
+name: gmail
+version: 1.0.0
+dsl_version: 3
+backend: http
+description: Gmail email threads
+base_url: https://gmail.googleapis.com
+
+inputs:
+  GMAIL_ACCESS_TOKEN:
+    kind: secret
+    hint: Gmail OAuth access token with gmail.readonly scope
+
+auth:
+  type: HeaderAuth
+  headers:
+    - name: Authorization
+      from: template
+      template: Bearer {{input.GMAIL_ACCESS_TOKEN}}
+
+tables:
+  - name: threads
+    description: Recent email threads
+    request:
+      method: GET
+      path: /gmail/v1/users/me/threads
+    response:
+      rows_path:
+        - threads
+    pagination:
+      mode: cursor_query
+      cursor_param: pageToken
+      response_cursor_path:
+        - nextPageToken
+      page_size:
+        default: 50
+        max: 50
+        query_param: maxResults
+    columns:
+      - name: id
+        type: Utf8
+      - name: subject
+        type: Utf8
+      - name: from_email
+        type: Utf8
+      - name: from_name
+        type: Utf8
+      - name: snippet
+        type: Utf8
+      - name: received_at
+        type: Timestamp
