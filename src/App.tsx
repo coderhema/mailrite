@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { 
@@ -27,9 +27,13 @@ import {
   Shield,
   ExternalLink,
   X,
-  ChevronLeft
+  ChevronLeft,
+  Terminal,
+  Play,
+  Table,
+  AlertCircle
 } from 'lucide-react';
-import { Contact, Message, DataSource } from './types';
+import { Contact, Message, DataSource, CoralQueryResult, CoralPresetQuery } from './types';
 import { searchContacts, generateDraft } from './services/geminiService';
 
 const MOCK_CONTACTS: Contact[] = [
@@ -41,6 +45,29 @@ const MOCK_CONTACTS: Contact[] = [
   { id: '6', name: 'David Miller', role: 'Design Manager', company: 'Meta', avatar: 'DM', source: 'Gmail' },
   { id: '7', name: 'Elena Rodriguez', role: 'Senior Designer', company: 'Vercel', avatar: 'ER', source: 'LinkedIn' },
   { id: '8', name: 'Tom Wilson', role: 'Founding Designer', company: 'Ramp', avatar: 'TW', source: 'LinkedIn' },
+];
+
+const CORAL_PRESET_QUERIES: CoralPresetQuery[] = [
+  {
+    label: 'All Contacts',
+    sql: "SELECT name, email, role, company, 'linkedin' AS source FROM linkedin.connections UNION ALL SELECT name, NULL, NULL, NULL, 'google' AS source FROM google_people.contacts LIMIT 20",
+    description: 'List contacts from all connected sources',
+  },
+  {
+    label: 'Cross-Source Lookup',
+    sql: "SELECT li.name, li.email, li.role, li.company, gp.name AS google_name FROM linkedin.connections li LEFT JOIN google_people.contacts gp ON LOWER(li.email) = LOWER(gp.email) WHERE li.email IS NOT NULL LIMIT 15",
+    description: 'Find contacts present on LinkedIn with Gmail history',
+  },
+  {
+    label: 'Recent Gmail Threads',
+    sql: "SELECT subject, from_name, from_email, received_at FROM gmail.threads ORDER BY received_at DESC LIMIT 10",
+    description: 'Latest email threads from Gmail',
+  },
+  {
+    label: 'Outreach Prospects',
+    sql: "SELECT name, email, role, company FROM linkedin.connections WHERE email IS NOT NULL AND email != '' ORDER BY name ASC LIMIT 10",
+    description: 'Top prospects with email addresses',
+  },
 ];
 
 const INITIAL_SOURCES: DataSource[] = [
@@ -67,6 +94,13 @@ export default function App() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [thinkingStage, setThinkingStage] = useState<string | null>(null);
+
+  const [coralMode, setCoralMode] = useState(false);
+  const [coralQuery, setCoralQuery] = useState('');
+  const [coralResults, setCoralResults] = useState<CoralQueryResult | null>(null);
+  const [coralError, setCoralError] = useState<string | null>(null);
+  const [coralLoading, setCoralLoading] = useState(false);
+  const [coralAvailable, setCoralAvailable] = useState<boolean | null>(null);
 
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
@@ -106,6 +140,47 @@ export default function App() {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, [sources]);
+
+  useEffect(() => {
+    fetch('/api/coral/check')
+      .then(r => r.json())
+      .then(data => setCoralAvailable(data.available))
+      .catch(() => setCoralAvailable(false));
+  }, []);
+
+  const handleCoralQuery = useCallback(async () => {
+    if (!coralQuery.trim() || coralLoading) return;
+
+    setCoralLoading(true);
+    setCoralError(null);
+    setCoralResults(null);
+
+    try {
+      const response = await fetch('/api/coral/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sql: coralQuery }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.details || err.error || 'Query failed');
+      }
+
+      const data = await response.json();
+      setCoralResults(data.result);
+    } catch (error) {
+      setCoralError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCoralLoading(false);
+    }
+  }, [coralQuery, coralLoading]);
+
+  const handleCoralPreset = useCallback((preset: CoralPresetQuery) => {
+    setCoralQuery(preset.sql);
+    setCoralResults(null);
+    setCoralError(null);
+  }, []);
 
   const handleSendMessage = async () => {
     if (!input.trim() || isSearching) return;
@@ -660,7 +735,7 @@ export default function App() {
         <div className="p-6 pb-4 shrink-0 border-b border-border">
           <div className="panel-header flex justify-between items-center min-h-[40px]">
             <div className="flex items-center gap-2">
-              {selectedContact && (
+              {selectedContact && !coralMode && (
                 <button 
                   onClick={() => {
                     setSelectedContact(null);
@@ -672,103 +747,244 @@ export default function App() {
                 </button>
               )}
               <div className="panel-title text-[11px] uppercase tracking-[0.2em] text-text-secondary font-bold">
-                {selectedContact ? 'Draft Preview' : 'Identified Contacts'}
+                {coralMode ? 'Coral SQL' : selectedContact ? 'Draft Preview' : 'Identified Contacts'}
               </div>
             </div>
-            {!selectedContact && (
+            {!selectedContact && !coralMode && (
               <div className="text-[10px] text-accent font-black bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">
                 {identifiedContacts.length || 0} Matches
               </div>
             )}
           </div>
+          <div className="flex gap-1 mt-3">
+            <button
+              onClick={() => { setCoralMode(false); setSelectedContact(null); }}
+              className={`flex-1 text-[10px] font-bold uppercase tracking-wider py-1.5 rounded-lg transition-colors ${
+                !coralMode ? 'bg-accent text-bg-deep' : 'bg-bg-surface text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              <Users className="w-3 h-3 inline mr-1" />
+              Contacts
+            </button>
+            <button
+              onClick={() => { setCoralMode(true); setSelectedContact(null); }}
+              className={`flex-1 text-[10px] font-bold uppercase tracking-wider py-1.5 rounded-lg transition-colors ${
+                coralMode ? 'bg-accent text-bg-deep' : 'bg-bg-surface text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              <Terminal className="w-3 h-3 inline mr-1" />
+              SQL
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-          <AnimatePresence mode="wait">
-            {!selectedContact ? (
-              <motion.div 
-                key="list"
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -10 }}
-                className="preview-list flex flex-col gap-[1px] bg-border border border-border rounded-lg overflow-hidden"
-              >
-                {identifiedContacts.length > 0 ? (
-                  identifiedContacts.map(contact => (
-                    <div 
-                      key={contact.id} 
-                      className="preview-item bg-bg-surface p-4 flex gap-3.5 items-center cursor-pointer hover:bg-bg-surface/80 transition-colors"
-                      onClick={() => handleContactClick(contact)}
+          {coralMode ? (
+            <motion.div
+              key="coral"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="space-y-4"
+            >
+              {coralAvailable === false && (
+                <div className="flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
+                  <AlertCircle className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" />
+                  <div className="text-[11px] text-text-secondary">
+                    <span className="font-bold text-yellow-500">Coral CLI not found.</span>{' '}
+                    Install it: <code className="text-accent">brew install withcoral/tap/coral</code>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-widest">Preset Queries</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {CORAL_PRESET_QUERIES.map(preset => (
+                    <button
+                      key={preset.label}
+                      onClick={() => handleCoralPreset(preset)}
+                      className="text-[10px] px-2.5 py-1.5 bg-bg-surface border border-border rounded-lg text-text-secondary hover:border-accent/40 hover:text-accent transition-colors font-medium"
+                      title={preset.description}
                     >
-                      <div className="avatar w-9 h-9 bg-border rounded-full flex items-center justify-center text-[10px] text-text-secondary font-black uppercase tracking-tighter">
-                        {contact.avatar}
-                      </div>
-                      <div className="preview-details flex flex-col">
-                        <div className="preview-name text-[13px] font-bold tracking-tight">{contact.name}</div>
-                        <div className="preview-role text-[10px] text-text-secondary font-medium uppercase tracking-wide">{contact.role} @ {contact.company}</div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="bg-bg-surface p-10 text-center text-text-tertiary text-[11px] font-medium uppercase tracking-widest">
-                    No contacts identified yet.
-                  </div>
-                )}
-              </motion.div>
-            ) : (
-              <motion.div 
-                key="draft"
-                initial={{ opacity: 0, x: 10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 10 }}
-                className="space-y-6"
-              >
-                <div className="flex items-center gap-4 p-4 bg-bg-surface border border-border rounded-xl">
-                  <div className="avatar w-12 h-12 bg-border rounded-full flex items-center justify-center text-[12px] text-text-secondary font-black uppercase tracking-tighter shrink-0">
-                    {selectedContact.avatar}
-                  </div>
-                  <div className="overflow-hidden">
-                    <div className="text-sm font-bold truncate">{selectedContact.name}</div>
-                    <div className="text-[10px] text-text-secondary font-medium uppercase truncate">{selectedContact.role} @ {selectedContact.company}</div>
-                  </div>
+                      {preset.label}
+                    </button>
+                  ))}
                 </div>
+              </div>
 
-                <div className="space-y-4">
-                  <div className="panel-title text-[10px] uppercase tracking-[0.2em] text-text-tertiary font-bold">Email Draft</div>
-                  <div className="text-[14px] text-text-primary leading-relaxed border-l-2 border-accent/30 pl-4 italic whitespace-pre-wrap font-medium bg-bg-surface/50 p-4 rounded-r-xl">
-                    {activeDraft}
-                  </div>
-                </div>
-
-                <button 
-                  onClick={handleSendEmail}
-                  disabled={isSendingEmail}
-                  className="w-full py-4 bg-accent text-bg-deep font-bold rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-accent/20"
+              <div className="space-y-2">
+                <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-widest">SQL Query</div>
+                <textarea
+                  value={coralQuery}
+                  onChange={(e) => setCoralQuery(e.target.value)}
+                  placeholder="SELECT name, email FROM linkedin.connections LIMIT 10"
+                  className="w-full h-24 bg-bg-deep border border-border rounded-xl p-3 text-[12px] font-mono text-text-primary resize-none outline-none focus:border-accent/40 transition-colors placeholder:text-text-tertiary"
+                  spellCheck={false}
+                />
+                <button
+                  onClick={handleCoralQuery}
+                  disabled={coralLoading || !coralQuery.trim()}
+                  className="w-full py-2.5 bg-accent text-bg-deep font-bold rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-[12px]"
                 >
-                  {isSendingEmail ? (
+                  {coralLoading ? (
                     <>
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                      >
-                        <Zap className="w-4 h-4 fill-bg-deep" />
+                      <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                        <Zap className="w-3.5 h-3.5 fill-bg-deep" />
                       </motion.div>
-                      Sending...
+                      Running...
                     </>
                   ) : (
-                    <>Send via {selectedContact.source}</>
+                    <>
+                      <Play className="w-3.5 h-3.5" />
+                      Run Query
+                    </>
                   )}
                 </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+              </div>
+
+              {coralError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-[11px] text-red-400 font-medium">
+                  <AlertCircle className="w-3.5 h-3.5 inline mr-1.5" />
+                  {coralError}
+                </div>
+              )}
+
+              {coralResults && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] font-bold text-text-tertiary uppercase tracking-widest flex items-center gap-1.5">
+                      <Table className="w-3 h-3" />
+                      Results
+                    </div>
+                    <div className="text-[9px] text-text-tertiary font-medium">
+                      {coralResults.rowCount} rows
+                      {coralResults.executionTimeMs != null && ` · ${coralResults.executionTimeMs}ms`}
+                    </div>
+                  </div>
+                  <div className="bg-bg-deep border border-border rounded-xl overflow-x-auto">
+                    <table className="w-full text-[11px] font-mono">
+                      <thead>
+                        <tr className="border-b border-border">
+                          {coralResults.columns.map(col => (
+                            <th key={col} className="text-left p-2.5 text-accent font-bold uppercase tracking-wider whitespace-nowrap">
+                              {col}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {coralResults.rows.length > 0 ? (
+                          coralResults.rows.map((row, i) => (
+                            <tr key={i} className="border-b border-border/50 last:border-0 hover:bg-bg-surface/50">
+                              {coralResults.columns.map(col => (
+                                <td key={col} className="p-2.5 text-text-primary whitespace-nowrap truncate max-w-[120px]">
+                                  {row[col] != null ? String(row[col]) : <span className="text-text-tertiary">NULL</span>}
+                                </td>
+                              ))}
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={coralResults.columns.length} className="p-6 text-center text-text-tertiary text-[11px] font-medium">
+                              No rows returned
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          ) : (
+            <AnimatePresence mode="wait">
+              {!selectedContact ? (
+                <motion.div 
+                  key="list"
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -10 }}
+                  className="preview-list flex flex-col gap-[1px] bg-border border border-border rounded-lg overflow-hidden"
+                >
+                  {identifiedContacts.length > 0 ? (
+                    identifiedContacts.map(contact => (
+                      <div 
+                        key={contact.id} 
+                        className="preview-item bg-bg-surface p-4 flex gap-3.5 items-center cursor-pointer hover:bg-bg-surface/80 transition-colors"
+                        onClick={() => handleContactClick(contact)}
+                      >
+                        <div className="avatar w-9 h-9 bg-border rounded-full flex items-center justify-center text-[10px] text-text-secondary font-black uppercase tracking-tighter">
+                          {contact.avatar}
+                        </div>
+                        <div className="preview-details flex flex-col">
+                          <div className="preview-name text-[13px] font-bold tracking-tight">{contact.name}</div>
+                          <div className="preview-role text-[10px] text-text-secondary font-medium uppercase tracking-wide">{contact.role} @ {contact.company}</div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="bg-bg-surface p-10 text-center text-text-tertiary text-[11px] font-medium uppercase tracking-widest">
+                      No contacts identified yet.
+                    </div>
+                  )}
+                </motion.div>
+              ) : (
+                <motion.div 
+                  key="draft"
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 10 }}
+                  className="space-y-6"
+                >
+                  <div className="flex items-center gap-4 p-4 bg-bg-surface border border-border rounded-xl">
+                    <div className="avatar w-12 h-12 bg-border rounded-full flex items-center justify-center text-[12px] text-text-secondary font-black uppercase tracking-tighter shrink-0">
+                      {selectedContact.avatar}
+                    </div>
+                    <div className="overflow-hidden">
+                      <div className="text-sm font-bold truncate">{selectedContact.name}</div>
+                      <div className="text-[10px] text-text-secondary font-medium uppercase truncate">{selectedContact.role} @ {selectedContact.company}</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="panel-title text-[10px] uppercase tracking-[0.2em] text-text-tertiary font-bold">Email Draft</div>
+                    <div className="text-[14px] text-text-primary leading-relaxed border-l-2 border-accent/30 pl-4 italic whitespace-pre-wrap font-medium bg-bg-surface/50 p-4 rounded-r-xl">
+                      {activeDraft}
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={handleSendEmail}
+                    disabled={isSendingEmail}
+                    className="w-full py-4 bg-accent text-bg-deep font-bold rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-accent/20"
+                  >
+                    {isSendingEmail ? (
+                      <>
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                        >
+                          <Zap className="w-4 h-4 fill-bg-deep" />
+                        </motion.div>
+                        Sending...
+                      </>
+                    ) : (
+                      <>Send via {selectedContact.source}</>
+                    )}
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          )}
         </div>
 
-        <div className="p-6 pt-0 shrink-0 flex justify-end">
-          <button className="p-3 bg-bg-surface border border-border rounded-full text-text-secondary hover:text-accent hover:border-accent/40 transition-all shadow-sm">
-            <History className="w-5 h-5" />
-          </button>
-        </div>
+        {!coralMode && (
+          <div className="p-6 pt-0 shrink-0 flex justify-end">
+            <button className="p-3 bg-bg-surface border border-border rounded-full text-text-secondary hover:text-accent hover:border-accent/40 transition-all shadow-sm">
+              <History className="w-5 h-5" />
+            </button>
+          </div>
+        )}
       </aside>
     </div>
   );

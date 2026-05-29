@@ -5,9 +5,6 @@
  * Fails fast if critical config is missing.
  */
 
-// Required
-export const COMPOSIO_API_KEY = process.env.COMPOSIO_API_KEY!;
-
 // Base Chain
 export const BASE_CHAIN_ID = parseInt(process.env.BASE_CHAIN_ID || '8453');
 export const BASE_PAYMENT_ROUTER_ADDRESS = process.env.BASE_PAYMENT_ROUTER_ADDRESS || '';
@@ -26,6 +23,10 @@ export const SMTP_USER = process.env.SMTP_USER || '';
 export const SMTP_PASS = process.env.SMTP_PASS || '';
 export const SMTP_FROM = process.env.SMTP_FROM || '';
 
+// Coral — SQL Query Layer
+export const CORAL_BINARY_PATH = process.env.CORAL_BINARY_PATH || 'coral';
+export const CORAL_QUERY_TIMEOUT = parseInt(process.env.CORAL_QUERY_TIMEOUT || '30000');
+
 // App
 export const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 export const PORT = parseInt(process.env.PORT || '3000');
@@ -34,17 +35,20 @@ export const PORT = parseInt(process.env.PORT || '3000');
 export function validateConfig(): string[] {
   const errors: string[] = [];
   
-  if (!COMPOSIO_API_KEY) {
-    errors.push('COMPOSIO_API_KEY is required for social auth');
-  }
-  
   if (X402_STRICT && !BASE_PAYMENT_ROUTER_ADDRESS) {
     errors.push('BASE_PAYMENT_ROUTER_ADDRESS required when X402_STRICT=true');
   }
   
-  if (!SMTP_HOST && !COMPOSIO_API_KEY) {
-    errors.push('Either SMTP_HOST or COMPOSIO_API_KEY must be configured for email');
+  if (!SMTP_HOST) {
+    errors.push('SMTP_HOST must be configured for email');
   }
   
   return errors;
+}
+
+export function getCoralConfig() {
+  return {
+    binaryPath: CORAL_BINARY_PATH,
+    timeout: CORAL_QUERY_TIMEOUT,
+  };
 }

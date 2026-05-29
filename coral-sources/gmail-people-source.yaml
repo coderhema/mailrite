@@ -1,0 +1,42 @@
+name: google_people
+version: 1.0.0
+dsl_version: 3
+backend: http
+description: Google People API contacts
+base_url: https://people.googleapis.com
+
+inputs:
+  GMAIL_ACCESS_TOKEN:
+    kind: secret
+    hint: Gmail OAuth access token with contacts.readonly scope
+
+auth:
+  type: HeaderAuth
+  headers:
+    - name: Authorization
+      from: template
+      template: Bearer {{input.GMAIL_ACCESS_TOKEN}}
+
+tables:
+  - name: contacts
+    description: Frequently contacted email addresses
+    request:
+      method: GET
+      path: /v1/people/me/connections
+    response:
+      rows_path:
+        - connections
+    pagination:
+      mode: cursor_query
+      cursor_param: pageToken
+      response_cursor_path:
+        - nextPageToken
+      page_size:
+        default: 200
+        max: 200
+        query_param: pageSize
+    columns:
+      - name: name
+        type: Utf8
+      - name: email
+        type: Utf8

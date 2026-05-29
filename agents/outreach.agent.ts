@@ -3,53 +3,56 @@
  * 
  * Autonomous agent for contact search, filtering, and draft generation.
  * Runs on Flue's programmable agent harness architecture.
- * 
- * @flue/sdk — Model + Harness + Sandbox + Filesystem
- * @composio/sdk — Social auth and contact extraction
  */
 
 import type { FlueContext } from '@flue/sdk/client';
-import { Composio } from '@composio/sdk';
 import * as v from 'valibot';
 
 // ─── Triggers ─────────────────────────────────────────────────────────────────
 export const triggers = {
-  webhook: true,  // Accepts { action, prompt, contactSource, userId }
+  webhook: true,  // Accepts { action, prompt, contactSource, userId, sql }
 };
 
 // ─── Output Schema ────────────────────────────────────────────────────────────
 const SearchResult = v.object({
   contactIds: v.array(v.string()),
-  source: v.picklist(['composio', 'local']),
+  source: v.literal('local'),
   confidence: v.number(),
 });
 
 const DraftResult = v.object({
   draft: v.string(),
   subject: v.string(),
-  source: v.picklist(['composio', 'local']),
+  source: v.literal('local'),
 });
 
 // ─── Agent Entrypoint ─────────────────────────────────────────────────────────
 export default async function ({ init, payload, env }: FlueContext) {
-  const { action, prompt, contact, userId } = payload;
+  const { action, prompt, contact, userId, sql } = payload;
 
-  // Initialize agent with structured skills
-  const agent = await init({
+  const session = await init({
     model: 'anthropic/claude-sonnet-4-6',
-    sandbox: 'default',  // Built-in zero-config sandbox
+    sandbox: 'empty',
   });
-
-  const session = await agent.session();
-
-  // ─── Composio Client (server-side, tokens never exposed to agent) ────────
-  const composio = new Composio({ apiKey: env.COMPOSIO_API_KEY });
 
   // ─── Route by Action ─────────────────────────────────────────────────────
   switch (action) {
+    case 'coral-query': {
+      if (!sql) {
+        return { error: 'Missing required field: sql' };
+      }
+
+      return await session.skill('coral-query', {
+        args: { sql },
+        result: v.object({
+          columns: v.array(v.string()),
+          rows: v.array(v.any()),
+          rowCount: v.number(),
+        }),
+      });
+    }
+
     case 'search': {
-      // Skill: contact-search
-      // Uses Composio to pull real contacts from connected social accounts
       return await session.skill('contact-search', {
         args: { prompt, userId },
         result: SearchResult,
@@ -66,10 +69,6 @@ export default async function ({ init, payload, env }: FlueContext) {
     }
 
     case 'full-pipeline': {
-      // Skill: full-outreach-pipeline
-      // 1. Search contacts via Composio integrations
-      // 2. Rank by relevance
-      // 3. Generate drafts for top matches
       const searchResult = await session.skill('contact-search', {
         args: { prompt, userId },
         result: SearchResult,
@@ -79,16 +78,20 @@ export default async function ({ init, payload, env }: FlueContext) {
         return { contacts: [], drafts: [] };
       }
 
-      // Fetch contact details via Composio
-      const contacts = await composio.tools.execute(
-        'LINKEDIN_GET_PROFILE_BATCH',
-        { userId, contactIds: searchResult.contactIds }
-      );
+      // Fetch contact details via Coral SQL
+      const ids = searchResult.contactIds.map(id => `'${id}'`).join(',');
+      const result = await session.skill('coral-query', {
+        args: { sql: `SELECT * FROM linkedin.connections WHERE id IN (${ids})` },
+        result: v.object({
+          columns: v.array(v.string()),
+          rows: v.array(v.any()),
+          rowCount: v.number(),
+        }),
+      });
 
-      // Generate drafts for top 5 contacts
-      const topContacts = contacts.slice(0, 5);
+      const contacts = result.rows.slice(0, 5);
       const drafts = await Promise.all(
-        topContacts.map(async (c: any) => {
+        contacts.map(async (c: any) => {
           const draft = await session.skill('outreach-draft', {
             args: { prompt, contact: c },
             result: DraftResult,
@@ -97,7 +100,7 @@ export default async function ({ init, payload, env }: FlueContext) {
         })
       );
 
-      return { contacts: topContacts, drafts };
+      return { contacts, drafts };
     }
 
     default:

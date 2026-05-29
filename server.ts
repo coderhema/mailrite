@@ -3,10 +3,13 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import fs from "fs";
 import nodemailer from "nodemailer";
 import crypto from "crypto";
 import type { Contact } from "./src/types.ts";
 import { authRouter, requireAuth } from "./src/auth.ts";
+import * as coralService from "./src/services/coralService.ts";
+import { getCoralConfig } from "./src/config.ts";
 
 dotenv.config();
 
@@ -234,6 +237,108 @@ async function startServer() {
       </html>
     `);
   });
+
+  // ─── Coral SQL Query Routes ────────────────────────────────────────
+  const coralConfig = getCoralConfig();
+  coralService.configureCoral(coralConfig);
+
+  app.get("/api/coral/check", async (req, res) => {
+    const available = await coralService.checkCoralAvailable();
+    res.json({ available });
+  });
+
+  app.get("/api/coral/sources", async (req, res) => {
+    try {
+      const sources = await coralService.listSources();
+      res.json({ sources });
+    } catch (error) {
+      res.status(500).json({
+        error: "Failed to list Coral sources",
+        details: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.post("/api/coral/query", express.json(), async (req, res) => {
+    const { sql } = req.body;
+
+    if (!sql || typeof sql !== "string") {
+      return res.status(400).json({ error: "Missing required field: sql" });
+    }
+
+    try {
+      const result = await coralService.runQuery(sql);
+      res.json({ result });
+    } catch (error) {
+      res.status(500).json({
+        error: "Coral query failed",
+        details: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.post("/api/coral/query/file", express.json(), async (req, res) => {
+    const { filePath } = req.body;
+
+    if (!filePath || typeof filePath !== "string") {
+      return res.status(400).json({ error: "Missing required field: filePath" });
+    }
+
+    const resolvedPath = path.resolve(filePath);
+    if (!fs.existsSync(resolvedPath)) {
+      return res.status(404).json({ error: `Query file not found: ${resolvedPath}` });
+    }
+
+    try {
+      const result = await coralService.runQueryFromFile(resolvedPath);
+      res.json({ result });
+    } catch (error) {
+      res.status(500).json({
+        error: "Coral file query failed",
+        details: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  app.get("/api/coral/queries/presets", (req, res) => {
+    const queriesDir = path.join(__dirname, "src", "queries");
+    const presets: { label: string; file: string; sql: string }[] = [];
+
+    if (fs.existsSync(queriesDir)) {
+      const files = fs.readdirSync(queriesDir).filter(f => f.endsWith(".sql"));
+      for (const file of files) {
+        const content = fs.readFileSync(path.join(queriesDir, file), "utf-8");
+        const label = file.replace(".sql", "").replace(/-/g, " ");
+        presets.push({
+          label: label.charAt(0).toUpperCase() + label.slice(1),
+          file,
+          sql: content,
+        });
+      }
+    }
+
+    res.json({ presets });
+  });
+
+  app.post("/api/coral/source/add", express.json(), async (req, res) => {
+    const { name, type, options } = req.body;
+
+    if (!name || !type) {
+      return res.status(400).json({ error: "Missing required fields: name, type" });
+    }
+
+    try {
+      await coralService.addSource(name, type, options);
+      res.json({ success: true, name });
+    } catch (error) {
+      res.status(500).json({
+        error: "Failed to add Coral source",
+        details: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // ─── Poke API Proxy Routes ────────────────────────────────────────
 
   app.post("/api/poke/contacts/search", express.json(), async (req, res) => {
     const prompt = typeof req.body?.prompt === "string" ? req.body.prompt : "";
