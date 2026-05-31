@@ -1,24 +1,29 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-bg-deep: #000000;
-  --color-bg-panel: #050505;
-  --color-bg-surface: #0f0f0f;
-  --color-border: #1f1f1f;
-  --color-text-primary: #ffffff;
-  --color-text-secondary: #666666;
-  --color-text-tertiary: #333333;
+  --color-bg-deep: #07080a;
+  --color-bg-panel: #0c0d0f;
+  --color-bg-surface: #121316;
+  --color-bg-elevated: #1a1b1f;
+  --color-bg-glass: rgba(18, 19, 22, 0.75);
+  --color-border: #1e1f24;
+  --color-border-subtle: #18191d;
+  --color-border-glass: rgba(255, 255, 255, 0.06);
+  --color-text-primary: #f0f0f2;
+  --color-text-secondary: #787880;
+  --color-text-tertiary: #404048;
   --color-accent: #FF9F1C;
-  --color-accent-dim: rgba(255, 159, 28, 0.15);
-  --color-accent-glow: rgba(255, 159, 28, 0.4);
+  --color-accent-dim: rgba(255, 159, 28, 0.1);
+  --color-accent-glow: rgba(255, 159, 28, 0.3);
 
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
+  --radius-xl: 16px;
 
-  --font-sans: 'Outfit', 'Inter', -apple-system, sans-serif;
-  --font-pixel: 'Courier New', Courier, monospace;
+  --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
 }
 
 @layer base {
@@ -27,18 +32,26 @@
   }
 
   body {
-    @apply bg-bg-deep text-text-primary font-sans overflow-hidden transition-colors duration-300;
+    @apply bg-bg-deep text-text-primary font-sans overflow-hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   [data-theme="light"] {
-    --color-bg-deep: #f8f9fa;
-    --color-bg-panel: #ffffff;
-    --color-bg-surface: #f1f3f5;
-    --color-border: #dee2e6;
-    --color-text-primary: #1a1a1a;
-    --color-text-secondary: #868e96;
-    --color-text-tertiary: #adb5bd;
+    --color-bg-deep: #f2f2f5;
+    --color-bg-panel: #f8f8fa;
+    --color-bg-surface: #ffffff;
+    --color-bg-elevated: #f0f0f3;
+    --color-bg-glass: rgba(255, 255, 255, 0.75);
+    --color-border: #e3e3e8;
+    --color-border-subtle: #eaeaf0;
+    --color-border-glass: rgba(0, 0, 0, 0.05);
+    --color-text-primary: #121214;
+    --color-text-secondary: #84848c;
+    --color-text-tertiary: #b8b8c0;
     --color-accent: #f08c00;
+    --color-accent-dim: rgba(240, 140, 0, 0.08);
+    --color-accent-glow: rgba(240, 140, 0, 0.2);
   }
 }
 
@@ -52,25 +65,21 @@
   100% { background-position: -200% 0; }
 }
 
-.animate-slide-in {
-  animation: slideIn 0.4s ease forwards;
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
+.animate-slide-in {
+  animation: slideIn 0.4s ease forwards;
 }
 
 .shimmer-text {
   background: linear-gradient(
     90deg,
-    var(--text-secondary) 25%,
-    var(--text-primary) 50%,
-    var(--text-secondary) 75%
+    var(--color-text-secondary) 25%,
+    var(--color-text-primary) 50%,
+    var(--color-text-secondary) 75%
   );
   background-size: 200% 100%;
   -webkit-background-clip: text;
@@ -93,10 +102,9 @@
 }
 
 [data-theme="light"] .chat-shadow {
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.04), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
 }
 
-/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -110,7 +118,6 @@
   @apply bg-text-secondary;
 }
 
-/* Markdown styles */
 .markdown-body {
   @apply text-inherit leading-relaxed;
 }
@@ -133,7 +140,7 @@
   @apply mb-1;
 }
 .markdown-body code {
-  @apply bg-bg-panel px-1.5 py-0.5 rounded text-sm font-mono border border-border;
+  @apply bg-bg-panel px-1.5 py-0.5 rounded-md text-sm font-mono border border-border;
 }
 .markdown-body pre {
   @apply bg-bg-panel p-4 rounded-xl border border-border mb-3 overflow-x-auto;
